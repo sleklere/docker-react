@@ -9,12 +9,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+
+      # Tests con imagen de dev
       - run: docker build -t cygnetops/react-test -f Dockerfile.dev .
       - run: docker run -e CI=true cygnetops/react-test npm test
 
+      # Build y push de la imagen de producción a Docker Hub
+      - run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - run: docker build -t ${{ secrets.DOCKER_USERNAME }}/frontend-kb-course:latest -t ${{ secrets.DOCKER_USERNAME }}/frontend-kb-course:${{ github.sha }} .
+      - run: docker push ${{ secrets.DOCKER_USERNAME }}/frontend-kb-course --all-tags
+
+      # Deploy a EB con imagen pre-buildeada (no buildea en EB)
       - name: Generate deployment package
-        run: zip -r deploy.zip . -x '*.git*'
+        run: |
+          printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s/frontend-kb-course:%s","Update":"true"},"Ports":[{"ContainerPort":80}]}' \
+            ${{ secrets.DOCKER_USERNAME }} ${{ github.sha }} > Dockerrun.aws.json
+          zip deploy.zip Dockerrun.aws.json
 
       - name: Deploy to EB
         uses: einaregilsson/beanstalk-deploy@v18
